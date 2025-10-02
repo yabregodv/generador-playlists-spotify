@@ -1,0 +1,32 @@
+# Environment variables 
+.env 
+config/config.php 
+config/database.php 
+ 
+# Composer 
+vendor/ 
+composer.lock 
+ 
+# Logs 
+logs/ 
+*.log 
+ 
+# Cache 
+cache/ 
+temp/ 
+storage/cache/* 
+storage/logs/* 
+storage/sessions/* 
+ 
+# IDE 
+.vscode/ 
+.idea/ 
+.DS_Store 
+  
+# Uploads 
+public/uploads/* 
+!public/uploads/.gitkeep 
+ 
+# Database 
+*.sqlite 
+*.db 
