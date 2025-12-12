@@ -108,6 +108,72 @@
           'ansioso': { genres: ['meditation', 'nature sounds', 'calm'], energy: 'low', tempo: 'slow', keywords: ['anxiety relief', 'peaceful', 'breathe'] },
           'aburrido': { genres: ['indie', 'alternative', 'discover'], energy: 'medium', tempo: 'varied', keywords: ['discovery', 'new music', 'fresh'] }
         };
+// Botón corazón para cada canción
+function LikeButton({ track, userId, isLiked, onLikeChange, mood }) {
+  const [loading, setLoading] = useState(false);
+
+  const toggleLike = async () => {
+    if (!userId) {
+      alert("Debes iniciar sesión para marcar canciones como favoritas");
+      return;
+    }
+    if (loading) return;
+
+    setLoading(true);
+
+    try {
+      if (isLiked) {
+        // Quitar like
+        const res = await fetch(
+          `http://localhost:3000/api/songs/unlike/${userId}/${track.id}`,
+          { method: "DELETE" }
+        );
+        if (!res.ok) throw new Error("Error al quitar like");
+        onLikeChange && onLikeChange(track, false, mood);
+      } else {
+        // Dar like
+        const res = await fetch("http://localhost:3000/api/songs/like", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            track_id: track.id,
+            track_name: track.name,
+            artist: track.artist,
+            album: track.album,
+            image: track.image,
+            mood
+          })
+        });
+        if (!res.ok) throw new Error("Error al guardar like");
+        onLikeChange && onLikeChange(track, true, mood);
+      }
+    } catch (error) {
+      console.error(error);
+      alert(error.message || "Error al actualizar favorito");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={toggleLike}
+      disabled={loading}
+      className={
+        "flex items-center gap-1 text-sm transform transition-transform " +
+        (isLiked ? "text-red-500" : "text-gray-300") +
+        " hover:scale-110 active:scale-95 disabled:opacity-60"
+      }
+    >
+      <span className="text-lg">{isLiked ? "❤️" : "🤍"}</span>
+      <span className="hidden sm:inline">
+        {isLiked ? "Quitar" : "Like"}
+      </span>
+    </button>
+  );
+}
 
         /**********************************************
          COMPONENTES REUTILIZABLES (FUERA DEL PRINCIPAL)
@@ -219,279 +285,443 @@
           );
         }
 
-        function HomeView({ userMood, setUserMood, generatePlaylistFromMood, isGenerating }) {
-          return (
-            <div className="max-w-4xl mx-auto mt-10 p-8">
-              <div className="text-center mb-12">
-                <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
-                  ¿Cómo te sientes hoy?
-                </h1>
-                <p className="text-gray-600 text-lg">
-                  Cuéntanos tu estado de ánimo y te recomendaremos la playlist perfecta
-                </p>
-              </div>
+function HomeView({ userMood, setUserMood, generatePlaylistFromMood, isGenerating, recommendations }) {
+  return (
+    <div className="max-w-4xl mx-auto mt-10 p-8">
+      <div className="text-center mb-12">
+        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+          ¿Cómo te sientes hoy?
+        </h1>
+        <p className="text-gray-600 text-lg">
+          Cuéntanos tu estado de ánimo y te recomendaremos la playlist perfecta
+        </p>
+      </div>
 
-              <div className="max-w-2xl mx-auto mb-12">
-                <div className="bg-white rounded-2xl shadow-2xl p-8">
-                  <div className="flex gap-4">
-                    <input
-                      type="text"
-                      value={userMood}
-                      onChange={(e) => setUserMood(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && generatePlaylistFromMood()}
-                      placeholder="Ej: feliz, triste, relajado, motivado..."
-                      className="flex-1 p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-lg"
-                    />
-                    <button
-                      onClick={generatePlaylistFromMood}
-                      disabled={isGenerating}
-                      className="bg-green-500 text-white px-8 py-4 rounded-xl hover:bg-green-600 transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isGenerating ? (
-                        <>
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                          Generando...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="w-5 h-5" />
-                          Generar
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
+      {/* 🔥 Recomendaciones inteligentes */}
+      {recommendations && recommendations.recommendedMoods?.length > 0 && (
+        <div className="max-w-2xl mx-auto mb-8">
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-xl shadow">
+            <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-500" />
+              Recomendado para ti
+            </h3>
+            <p className="text-gray-600 mt-2">{recommendations.message}</p>
 
-              <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">O elige un estado de ánimo</h2>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  {Object.keys(MOOD_DATABASE).map((mood) => (
-                    <MoodQuickButton
-                      key={mood}
-                      mood={mood}
-                      onClick={() => {
-                        setUserMood(mood);
-                        setTimeout(() => generatePlaylistFromMood(), 100);
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {recommendations.recommendedMoods.map((mood) => (
+                <button
+                  key={mood}
+                  onClick={() => {
+                    setUserMood(mood);
+                    setTimeout(() => generatePlaylistFromMood(), 100);
+                  }}
+                  className="px-3 py-1 rounded-full bg-white/80 text-sm font-semibold shadow border border-pink-100 hover:scale-105 transition transform capitalize"
+                >
+                  {mood}{" "}
+                  {recommendations.stats && recommendations.stats[mood] && (
+                    <span className="ml-1 text-xs text-pink-500">
+                      ({recommendations.stats[mood]} ❤️)
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
-          );
-        }
+          </div>
+        </div>
+      )}
 
-        function PlaylistView({ generatedPlaylist, user, savePlaylist, sharePlaylist, exportToSpotify, setView }) {
-          if (!generatedPlaylist) return null;
+      <div className="max-w-2xl mx-auto mb-12">
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <div className="flex gap-4">
+            <input
+              type="text"
+              value={userMood}
+              onChange={(e) => setUserMood(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && generatePlaylistFromMood()}
+              placeholder="Ej: feliz, triste, relajado, motivado..."
+              className="flex-1 p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none text-lg"
+            />
+            <button
+              onClick={generatePlaylistFromMood}
+              disabled={isGenerating}
+              className="bg-green-500 text-white px-8 py-4 rounded-xl hover:bg-green-600 transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isGenerating ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  Generando...
+                </>
+              ) : (
+                <>
+                  <Search className="w-5 h-5" />
+                  Generar
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
 
-          return (
-            <div className="max-w-4xl mx-auto mt-10 p-8">
-              <div className="bg-white rounded-2xl shadow-2xl p-8">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h2 className="text-3xl font-bold text-gray-800">{generatedPlaylist.name}</h2>
-                    <p className="text-gray-500 mt-1">
-                      Basado en:{" "}
-                      <span className="font-semibold capitalize">
-                        {generatedPlaylist.originalInput}
-                      </span>
-                    </p>
-                  </div>
-                  <button onClick={() => setView("home")} className="text-gray-500 hover:text-gray-700">
-                    ← Volver
-                  </button>
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">O elige un estado de ánimo</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          {Object.keys(MOOD_DATABASE).map((mood) => (
+            <MoodQuickButton
+              key={mood}
+              mood={mood}
+              onClick={() => {
+                setUserMood(mood);
+                setTimeout(() => generatePlaylistFromMood(), 100);
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ function PlaylistView({
+  generatedPlaylist,
+  user,
+  savePlaylist,
+  sharePlaylist,
+  exportToSpotify,
+  setView,
+  likedTrackIds,
+  onLikeChange
+}) {
+  if (!generatedPlaylist) return null;
+
+  return (
+    <div className="max-w-4xl mx-auto mt-10 p-8">
+      <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-800">{generatedPlaylist.name}</h2>
+            <p className="text-gray-500 mt-1">
+              Basado en:{" "}
+              <span className="font-semibold capitalize">
+                {generatedPlaylist.originalInput}
+              </span>
+            </p>
+          </div>
+          <button onClick={() => setView("home")} className="text-gray-500 hover:text-gray-700">
+            ← Volver
+          </button>
+        </div>
+
+        <div className="flex gap-4 mb-8 flex-wrap">
+          {user ? (
+            <>
+              <button
+                onClick={savePlaylist}
+                className="flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition"
+              >
+                <Heart className="w-4 h-4" /> Guardar
+              </button>
+              <button
+                onClick={() => sharePlaylist(generatedPlaylist)}
+                className="flex items-center gap-2 bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition"
+              >
+                <Share2 className="w-4 h-4" /> Compartir
+              </button>
+              <button
+                onClick={exportToSpotify}
+                className="flex items-center gap-2 bg-black text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition"
+              >
+                <Music className="w-4 h-4" /> Exportar a Spotify
+              </button>
+            </>
+          ) : (
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+              <p className="text-yellow-800">
+                🔒 <strong>Inicia sesión</strong> para guardar, compartir y exportar tus playlists
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          {generatedPlaylist.tracks.map((track, idx) => {
+            const trackForLike = {
+              id: track.id,
+              name: track.name,
+              artist: track.artist,
+              album: track.album,
+              image: track.image,
+              mood: generatedPlaylist.mood
+            };
+
+            return (
+              <div
+                key={track.id}
+                className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+              >
+                <span className="text-gray-400 font-bold w-8">{idx + 1}</span>
+                {track.image && (
+                  <img src={track.image} alt={track.name} className="w-16 h-16 rounded shadow" />
+                )}
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-800">{track.name}</p>
+                  <p className="text-sm text-gray-600">
+                    {track.artist} • {track.album}
+                  </p>
                 </div>
 
-                <div className="flex gap-4 mb-8 flex-wrap">
-                  {user ? (
-                    <>
-                      <button
-                        onClick={savePlaylist}
-                        className="flex items-center gap-2 bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition"
-                      >
-                        <Heart className="w-4 h-4" /> Guardar
-                      </button>
-                      <button
-                        onClick={() => sharePlaylist(generatedPlaylist)}
-                        className="flex items-center gap-2 bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition"
-                      >
-                        <Share2 className="w-4 h-4" /> Compartir
-                      </button>
-                      <button
-                        onClick={exportToSpotify}
-                        className="flex items-center gap-2 bg-black text-white px-6 py-3 rounded-lg hover:bg-gray-800 transition"
-                      >
-                        <Music className="w-4 h-4" /> Exportar a Spotify
-                      </button>
-                    </>
-                  ) : (
-                    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
-                      <p className="text-yellow-800">
-                        🔒 <strong>Inicia sesión</strong> para guardar, compartir y exportar tus playlists
+                {user && (
+                  <LikeButton
+                    track={trackForLike}
+                    userId={user.id}
+                    isLiked={likedTrackIds.has(track.id)}
+                    mood={generatedPlaylist.mood}
+                    onLikeChange={onLikeChange}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+function LikedSongsView({ userId, likedSongs, setView, likedTrackIds, onLikeChange }) {
+  return (
+    <div className="max-w-4xl mx-auto mt-10 p-8">
+      <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-800">Mis canciones favoritas</h2>
+            <p className="text-gray-500 mt-1">
+              {likedSongs.length > 0
+                ? `Tienes ${likedSongs.length} canciones marcadas con ❤️`
+                : "Marca canciones como favoritas desde cualquier playlist"}
+            </p>
+          </div>
+          <button onClick={() => setView("home")} className="text-gray-500 hover:text-gray-700">
+            ← Volver
+          </button>
+        </div>
+
+        {likedSongs.length === 0 ? (
+          <div className="text-center py-12">
+            <Heart className="w-16 h-16 mx-auto text-gray-200 mb-4" />
+            <p className="text-gray-500 mb-4">
+              Aún no tienes canciones favoritas.
+            </p>
+            <button
+              onClick={() => setView("home")}
+              className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
+            >
+              Buscar música por estado de ánimo →
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {likedSongs.map((song, idx) => {
+              const track = {
+                id: song.track_id,
+                name: song.track_name,
+                artist: song.artist,
+                album: song.album,
+                image: song.image,
+                mood: song.mood
+              };
+
+              return (
+                <div
+                  key={song.id || song.track_id}
+                  className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                >
+                  <span className="text-gray-400 font-bold w-8">{idx + 1}</span>
+                  {song.image && (
+                    <img src={song.image} alt={song.track_name} className="w-16 h-16 rounded shadow" />
+                  )}
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-800">{song.track_name}</p>
+                    <p className="text-sm text-gray-600">
+                      {song.artist} • {song.album}
+                    </p>
+                    {song.mood && (
+                      <p className="text-xs text-gray-500 mt-1 capitalize">
+                        Mood asociado: {song.mood}
                       </p>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
 
-                <div className="space-y-3">
-                  {generatedPlaylist.tracks.map((track, idx) => (
-                    <div
-                      key={track.id}
-                      className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                    >
-                      <span className="text-gray-400 font-bold w-8">{idx + 1}</span>
-                      {track.image && (
-                        <img src={track.image} alt={track.name} className="w-16 h-16 rounded shadow" />
-                      )}
-                      <div className="flex-1">
-                        <p className="font-semibold text-gray-800">{track.name}</p>
-                        <p className="text-sm text-gray-600">
-                          {track.artist} • {track.album}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                  <LikeButton
+                    track={track}
+                    userId={userId}
+                    isLiked={likedTrackIds.has(song.track_id)}
+                    mood={song.mood}
+                    onLikeChange={onLikeChange}
+                  />
                 </div>
-              </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function ProfileView({
+  userStats,
+  savedPlaylists,
+  setView,
+  setGeneratedPlaylist,
+  sharePlaylist,
+  likedSongsCount
+}) {
+  return (
+    <div className="max-w-4xl mx-auto mt-10 p-8">
+      <div className="bg-white rounded-2xl shadow-2xl p-8">
+        <h2 className="text-3xl font-bold text-gray-800 mb-6">Mi Perfil</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="bg-green-50 p-6 rounded-xl text-center">
+            <TrendingUp className="w-12 h-12 mx-auto text-green-500 mb-2" />
+            <p className="text-3xl font-bold text-gray-800">{userStats.totalPlaylists}</p>
+            <p className="text-gray-600">Playlists Guardadas</p>
+          </div>
+          <div className="bg-purple-50 p-6 rounded-xl text-center">
+            <Sparkles className="w-12 h-12 mx-auto text-purple-500 mb-2" />
+            <p className="text-3xl font-bold text-gray-800">{userStats.favoriteMood}</p>
+            <p className="text-gray-600">Estado Favorito</p>
+          </div>
+          <div className="bg-blue-50 p-6 rounded-xl text-center">
+            <Music className="w-12 h-12 mx-auto text-blue-500 mb-2" />
+            <p className="text-3xl font-bold text-gray-800">
+              {savedPlaylists.reduce((acc, pl) => acc + pl.tracks.length, 0)}
+            </p>
+            <p className="text-gray-600">Canciones Totales</p>
+          </div>
+          {/* 🧡 Nueva estadística */}
+          <div className="bg-red-50 p-6 rounded-xl text-center">
+            <Heart className="w-12 h-12 mx-auto text-red-500 mb-2" />
+            <p className="text-3xl font-bold text-gray-800">{likedSongsCount}</p>
+            <p className="text-gray-600">Canciones Favoritas</p>
+          </div>
+        </div>
+
+        <h3 className="text-2xl font-bold text-gray-800 mb-4">Mis Playlists</h3>
+        <div className="space-y-3">
+          {savedPlaylists.length === 0 ? (
+            <div className="text-center py-12">
+              <Music className="w-16 h-16 mx-auto text-gray-300 mb-4" />
+              <p className="text-gray-500">No tienes playlists guardadas aún</p>
+              <button
+                onClick={() => setView("home")}
+                className="mt-4 text-green-500 hover:text-green-600 font-semibold"
+              >
+                Generar mi primera playlist →
+              </button>
             </div>
-          );
-        }
-
-        function ProfileView({ userStats, savedPlaylists, setView, setGeneratedPlaylist, sharePlaylist }) {
-          return (
-            <div className="max-w-4xl mx-auto mt-10 p-8">
-              <div className="bg-white rounded-2xl shadow-2xl p-8">
-                <h2 className="text-3xl font-bold text-gray-800 mb-6">Mi Perfil</h2>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  <div className="bg-green-50 p-6 rounded-xl text-center">
-                    <TrendingUp className="w-12 h-12 mx-auto text-green-500 mb-2" />
-                    <p className="text-3xl font-bold text-gray-800">{userStats.totalPlaylists}</p>
-                    <p className="text-gray-600">Playlists Guardadas</p>
-                  </div>
-                  <div className="bg-purple-50 p-6 rounded-xl text-center">
-                    <Sparkles className="w-12 h-12 mx-auto text-purple-500 mb-2" />
-                    <p className="text-3xl font-bold text-gray-800">{userStats.favoriteMood}</p>
-                    <p className="text-gray-600">Estado Favorito</p>
-                  </div>
-                  <div className="bg-blue-50 p-6 rounded-xl text-center">
-                    <Music className="w-12 h-12 mx-auto text-blue-500 mb-2" />
-                    <p className="text-3xl font-bold text-gray-800">
-                      {savedPlaylists.reduce((acc, pl) => acc + pl.tracks.length, 0)}
-                    </p>
-                    <p className="text-gray-600">Canciones Totales</p>
-                  </div>
+          ) : (
+            savedPlaylists.map((pl) => (
+              <div
+                key={pl.id}
+                className="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+              >
+                <div>
+                  <p className="font-semibold text-gray-800">{pl.name}</p>
+                  <p className="text-sm text-gray-600">
+                    {pl.tracks.length} canciones •{" "}
+                    <span className="capitalize">{pl.mood}</span>
+                  </p>
                 </div>
-
-                <h3 className="text-2xl font-bold text-gray-800 mb-4">Mis Playlists</h3>
-                <div className="space-y-3">
-                  {savedPlaylists.length === 0 ? (
-                    <div className="text-center py-12">
-                      <Music className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                      <p className="text-gray-500">No tienes playlists guardadas aún</p>
-                      <button
-                        onClick={() => setView("home")}
-                        className="mt-4 text-green-500 hover:text-green-600 font-semibold"
-                      >
-                        Generar mi primera playlist →
-                      </button>
-                    </div>
-                  ) : (
-                    savedPlaylists.map((pl) => (
-                      <div
-                        key={pl.id}
-                        className="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
-                      >
-                        <div>
-                          <p className="font-semibold text-gray-800">{pl.name}</p>
-                          <p className="text-sm text-gray-600">
-                            {pl.tracks.length} canciones •{" "}
-                            <span className="capitalize">{pl.mood}</span>
-                          </p>
-                        </div>
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => {
-                              setGeneratedPlaylist(pl);
-                              setView("playlist");
-                            }}
-                            className="text-green-500 hover:text-green-600 font-semibold"
-                          >
-                            Ver
-                          </button>
-                          <button
-                            onClick={() => sharePlaylist(pl)}
-                            className="text-blue-500 hover:text-blue-600 font-semibold"
-                          >
-                            Compartir
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        }
-
-        function Navigation({ user, setView, handleLogout }) {
-          return (
-            <nav className="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 shadow-lg">
-              <div className="max-w-6xl mx-auto flex justify-between items-center">
-                <div className="flex items-center gap-2 text-2xl font-bold">
-                  <Music className="w-8 h-8" />
-                  MoodPlaylist
-                </div>
-
-                <div className="flex items-center gap-6">
+                <div className="flex gap-3">
                   <button
-                    onClick={() => setView("home")}
-                    className="flex items-center gap-2 hover:text-green-200 transition"
+                    onClick={() => {
+                      setGeneratedPlaylist(pl);
+                      setView("playlist");
+                    }}
+                    className="text-green-500 hover:text-green-600 font-semibold"
                   >
-                    <Home className="w-5 h-5" /> Home
+                    Ver
                   </button>
-
-                  {user ? (
-                    <>
-                      <button
-                        onClick={() => setView("profile")}
-                        className="flex items-center gap-2 hover:text-green-200 transition"
-                      >
-                        <User className="w-5 h-5" /> Perfil
-                      </button>
-                      <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 hover:text-green-200 transition"
-                      >
-                        <LogOut className="w-5 h-5" /> Salir
-                      </button>
-                      <span className="text-sm bg-green-600 px-3 py-1 rounded-full">
-                        👋 {user.name}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => setView("login")}
-                        className="flex items-center gap-2 hover:text-green-200 transition"
-                      >
-                        <LogIn className="w-5 h-5" /> Iniciar Sesión
-                      </button>
-                      <button
-                        onClick={() => setView("register")}
-                        className="flex items-center gap-2 hover:text-green-200 transition"
-                      >
-                        <UserPlus className="w-5 h-5" /> Registrarse
-                      </button>
-                    </>
-                  )}
+                  <button
+                    onClick={() => sharePlaylist(pl)}
+                    className="text-blue-500 hover:text-blue-600 font-semibold"
+                  >
+                    Compartir
+                  </button>
                 </div>
               </div>
-            </nav>
-          );
-        }
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Navigation({ user, setView, handleLogout }) {
+  return (
+    <nav className="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 shadow-lg">
+      <div className="max-w-6xl mx-auto flex justify-between items-center">
+        <div className="flex items-center gap-2 text-2xl font-bold">
+          <Music className="w-8 h-8" />
+          MoodPlaylist
+        </div>
+
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => setView("home")}
+            className="flex items-center gap-2 hover:text-green-200 transition"
+          >
+            <Home className="w-5 h-5" /> Home
+          </button>
+
+          {user ? (
+            <>
+              <button
+                onClick={() => setView("profile")}
+                className="flex items-center gap-2 hover:text-green-200 transition"
+              >
+                <User className="w-5 h-5" /> Perfil
+              </button>
+
+              {/* ❤️ Mis favoritas */}
+              <button
+                onClick={() => setView("liked")}
+                className="flex items-center gap-2 hover:text-green-200 transition"
+              >
+                <Heart className="w-5 h-5" /> Mis Favoritas
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 hover:text-green-200 transition"
+              >
+                <LogOut className="w-5 h-5" /> Salir
+              </button>
+              <span className="text-sm bg-green-600 px-3 py-1 rounded-full">
+                👋 {user.name}
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setView("login")}
+                className="flex items-center gap-2 hover:text-green-200 transition"
+              >
+                <LogIn className="w-5 h-5" /> Iniciar Sesión
+              </button>
+              <button
+                onClick={() => setView("register")}
+                className="flex items-center gap-2 hover:text-green-200 transition"
+              >
+                <UserPlus className="w-5 h-5" /> Registrarse
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </nav>
+  );
+}
 
         /**********************************************
          COMPONENTE PRINCIPAL
@@ -507,16 +737,21 @@
           const [registerData, setRegisterData] = useState({ name: "", email: "", password: "" });
           const [userMood, setUserMood] = useState("");
           const [isGenerating, setIsGenerating] = useState(false);
+          const [likedSongs, setLikedSongs] = useState([]);
+          const [likedTrackIds, setLikedTrackIds] = useState(new Set());
+          const [recommendations, setRecommendations] = useState(null);
 
-          useEffect(() => {
-            getSpotifyToken();
-            const savedUser = localStorage.getItem("currentUser");
-            if (savedUser) {
-              const userData = JSON.parse(savedUser);
-              setUser(userData);
-              loadUserPlaylists(userData.id);
-            }
-          }, []);
+useEffect(() => {
+  getSpotifyToken();
+  const savedUser = localStorage.getItem("currentUser");
+  if (savedUser) {
+    const userData = JSON.parse(savedUser);
+    setUser(userData);
+    loadUserPlaylists(userData.id);
+    loadLikedSongs(userData.id);
+    loadRecommendations(userData.id);
+  }
+}, []);
 
           const getSpotifyToken = async () => {
             try {
@@ -538,14 +773,16 @@
 
               const data = await res.json();
 
-              if (res.ok) {
-                setUser(data);
-                localStorage.setItem("currentUser", JSON.stringify(data));
-                loadUserPlaylists(data.id);
-                setView("home");
-              } else {
-                alert(data.error || "Credenciales incorrectas");
-              }
+if (res.ok) {
+  setUser(data);
+  localStorage.setItem("currentUser", JSON.stringify(data));
+  loadUserPlaylists(data.id);
+  loadLikedSongs(data.id);
+  loadRecommendations(data.id);
+  setView("home");
+} else {
+  alert(data.error || "Credenciales incorrectas");
+}
             } catch (err) {
               alert("Error en login");
             }
@@ -574,10 +811,13 @@
           };
 
           const handleLogout = () => {
-            setUser(null);
-            localStorage.removeItem("currentUser");
-            setView("home");
-            setSavedPlaylists([]);
+  setUser(null);
+  localStorage.removeItem("currentUser");
+  setView("home");
+  setSavedPlaylists([]);
+  setLikedSongs([]);
+  setLikedTrackIds(new Set());
+  setRecommendations(null);
           };
 
           const loadUserPlaylists = async (userId) => {
@@ -602,6 +842,71 @@
               favoriteMood: favMood.charAt(0).toUpperCase() + favMood.slice(1)
             });
           };
+
+const loadLikedSongs = async (userId) => {
+  try {
+    const res = await fetch(`http://localhost:3000/api/songs/liked/${userId}`);
+    if (!res.ok) throw new Error("Error al cargar likes");
+    const data = await res.json();
+    setLikedSongs(data);
+    setLikedTrackIds(new Set(data.map((s) => s.track_id)));
+  } catch (error) {
+    console.error("Error cargando liked songs:", error);
+  }
+};
+
+const loadRecommendations = async (userId) => {
+  try {
+    const res = await fetch(`http://localhost:3000/api/recommendations/${userId}`);
+    if (!res.ok) throw new Error("Error al cargar recomendaciones");
+    const data = await res.json();
+    if (data && Array.isArray(data.recommendedMoods) && data.recommendedMoods.length > 0) {
+      setRecommendations(data);
+    } else {
+      setRecommendations(null);
+    }
+  } catch (error) {
+    console.error("Error cargando recomendaciones:", error);
+  }
+};
+
+const handleLikeChange = (track, liked, mood) => {
+  setLikedTrackIds((prev) => {
+    const next = new Set(prev);
+    if (liked) {
+      next.add(track.id);
+    } else {
+      next.delete(track.id);
+    }
+    return next;
+  });
+
+  setLikedSongs((prev) => {
+    if (liked) {
+      if (prev.some((s) => s.track_id === track.id)) return prev;
+      return [
+        {
+          id: Date.now(),
+          track_id: track.id,
+          track_name: track.name,
+          artist: track.artist,
+          album: track.album,
+          image: track.image,
+          mood: mood || track.mood || "",
+          created_at: new Date().toISOString()
+        },
+        ...prev
+      ];
+    }
+    return prev.filter((s) => s.track_id !== track.id);
+  });
+
+  if (user) {
+    loadRecommendations(user.id);
+  }
+};
+
+
 
           const generatePlaylistFromMood = async () => {
             if (!userMood.trim()) {
@@ -740,10 +1045,11 @@
 
               {view === "home" && (
                 <HomeView
-                  userMood={userMood}
-                  setUserMood={setUserMood}
-                  generatePlaylistFromMood={generatePlaylistFromMood}
-                  isGenerating={isGenerating}
+    userMood={userMood}
+    setUserMood={setUserMood}
+    generatePlaylistFromMood={generatePlaylistFromMood}
+    isGenerating={isGenerating}
+    recommendations={recommendations}
                 />
               )}
 
@@ -767,24 +1073,38 @@
 
               {view === "playlist" && (
                 <PlaylistView
-                  generatedPlaylist={generatedPlaylist}
-                  user={user}
-                  savePlaylist={savePlaylist}
-                  sharePlaylist={sharePlaylist}
-                  exportToSpotify={exportToSpotify}
-                  setView={setView}
+    generatedPlaylist={generatedPlaylist}
+    user={user}
+    savePlaylist={savePlaylist}
+    sharePlaylist={sharePlaylist}
+    exportToSpotify={exportToSpotify}
+    setView={setView}
+    likedTrackIds={likedTrackIds}
+    onLikeChange={handleLikeChange}
                 />
               )}
 
               {view === "profile" && user && (
                 <ProfileView
-                  userStats={userStats}
-                  savedPlaylists={savedPlaylists}
-                  setView={setView}
-                  setGeneratedPlaylist={setGeneratedPlaylist}
-                  sharePlaylist={sharePlaylist}
+    userStats={userStats}
+    savedPlaylists={savedPlaylists}
+    setView={setView}
+    setGeneratedPlaylist={setGeneratedPlaylist}
+    sharePlaylist={sharePlaylist}
+    likedSongsCount={likedSongs.length}
                 />
               )}
+
+              {view === "liked" && user && (
+  <LikedSongsView
+    userId={user.id}
+    likedSongs={likedSongs}
+    setView={setView}
+    likedTrackIds={likedTrackIds}
+    onLikeChange={handleLikeChange}
+  />
+)}
+
             </div>
           );
         }
