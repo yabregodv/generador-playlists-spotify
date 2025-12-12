@@ -9,7 +9,7 @@ app.use(express.json());
 app.use(express.static(__dirname));
 
 // =============================================
-// SPOTIFY TOKEN  (tu código original)
+// SPOTIFY TOKEN
 // =============================================
 const CLIENT_ID = "1b82ef41f6ac45dd8e363f255de9ab73";
 const CLIENT_SECRET = "13afd66fb7614809b0d0eff626cbb813";
@@ -108,6 +108,139 @@ app.get("/user-playlists/:user_id", (req, res) => {
       }));
 
       res.json(formatted);
+    }
+  );
+});
+
+// =============================================
+// LIKES DE CANCIONES
+// =============================================
+
+// 1) Dar LIKE a una canción
+app.post("/api/songs/like", (req, res) => {
+  const {
+    user_id,
+    track_id,
+    track_name,
+    artist,
+    mood,
+    album,
+    image
+  } = req.body;
+
+  if (!user_id || !track_id) {
+    return res.status(400).json({ error: "user_id y track_id son obligatorios" });
+  }
+
+  const sql = `
+    INSERT OR IGNORE INTO liked_songs 
+    (user_id, track_id, track_name, artist, mood, album, image)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  db.run(
+    sql,
+    [user_id, track_id, track_name, artist, mood, album, image],
+    function (err) {
+      if (err) {
+        console.error("Error insertando like:", err);
+        return res.status(500).json({ error: "Error guardando like" });
+      }
+
+      // this.changes será 0 si ya existía el like (por UNIQUE)
+      res.json({ success: true });
+    }
+  );
+});
+
+// 2) Quitar LIKE
+app.delete("/api/songs/unlike/:user_id/:track_id", (req, res) => {
+  const { user_id, track_id } = req.params;
+
+  db.run(
+    `DELETE FROM liked_songs WHERE user_id = ? AND track_id = ?`,
+    [user_id, track_id],
+    function (err) {
+      if (err) {
+        console.error("Error borrando like:", err);
+        return res.status(500).json({ error: "Error eliminando like" });
+      }
+
+      res.json({ success: true });
+    }
+  );
+});
+
+// 3) Obtener canciones con LIKE del usuario
+app.get("/api/songs/liked/:user_id", (req, res) => {
+  const { user_id } = req.params;
+
+  db.all(
+    `SELECT 
+       id,
+       track_id,
+       track_name,
+       artist,
+       mood,
+       album,
+       image,
+       created_at
+     FROM liked_songs
+     WHERE user_id = ?
+     ORDER BY created_at DESC`,
+    [user_id],
+    (err, rows) => {
+      if (err) {
+        console.error("Error obteniendo liked_songs:", err);
+        return res.status(500).json({ error: "Error obteniendo canciones favoritas" });
+      }
+
+      res.json(rows);
+    }
+  );
+});
+
+// 4) Recomendaciones inteligentes basadas en moods
+app.get("/api/recommendations/:user_id", (req, res) => {
+  const { user_id } = req.params;
+
+  db.all(
+    `SELECT mood FROM liked_songs WHERE user_id = ?`,
+    [user_id],
+    (err, rows) => {
+      if (err) {
+        console.error("Error en recomendaciones:", err);
+        return res.status(500).json({ error: "Error generando recomendaciones" });
+      }
+
+      if (!rows || rows.length === 0) {
+        // Caso sin likes
+        return res.json({
+          recommendedMoods: [],
+          message: ""
+        });
+      }
+
+      const moodCount = {};
+      rows.forEach(r => {
+        const mood = (r.mood || "").toLowerCase().trim();
+        if (!mood) return;
+        moodCount[mood] = (moodCount[mood] || 0) + 1;
+      });
+
+      const entries = Object.entries(moodCount).sort((a, b) => b[1] - a[1]);
+      const recommendedMoods = entries.slice(0, 3).map(([mood]) => mood);
+      const topMood = recommendedMoods[0] || null;
+      const totalLikes = rows.length;
+
+      const message = `Basado en tus ${totalLikes} canciones favoritas, te recomendamos estos estados de ánimo`;
+
+      res.json({
+        recommendedMoods,
+        message,
+        topMood,
+        stats: moodCount
+      });
     }
   );
 });

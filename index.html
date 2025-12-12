@@ -96,13 +96,6 @@
             </svg>
         );
 
-        
-        const SPOTIFY_CONFIG = {
-          // CREDENCIALES REALES ENVIADAS POR EL USUARIO
-          clientId: '3ef1e0747214517af608a9f8d28431f',
-          clientSecret: '2bed11a762854513a8e95310cfe0dda0'
-        };
-
         const MOOD_DATABASE = {
           'feliz': { genres: ['pop', 'dance', 'funk'], energy: 'high', tempo: 'fast', keywords: ['happy', 'upbeat', 'cheerful'] },
           'triste': { genres: ['acoustic', 'indie', 'sad'], energy: 'low', tempo: 'slow', keywords: ['sad', 'melancholic', 'emotional'] },
@@ -116,251 +109,11 @@
           'aburrido': { genres: ['indie', 'alternative', 'discover'], energy: 'medium', tempo: 'varied', keywords: ['discovery', 'new music', 'fresh'] }
         };
 
-        function SpotifyPlaylistGenerator() {
-          const [user, setUser] = useState(null);
-          const [view, setView] = useState('home');
-          const [spotifyToken, setSpotifyToken] = useState(null);
-          const [generatedPlaylist, setGeneratedPlaylist] = useState(null);
-          const [savedPlaylists, setSavedPlaylists] = useState([]);
-          const [userStats, setUserStats] = useState({ totalPlaylists: 0, favoriteMood: 'Feliz' });
-          const [loginData, setLoginData] = useState({ email: '', password: '' });
-          const [registerData, setRegisterData] = useState({ name: '', email: '', password: '' });
-          const [userMood, setUserMood] = useState('');
-          const [isGenerating, setIsGenerating] = useState(false);
-
-          const mockUsers = [
-            { id: 1, email: 'demo@playlist.com', password: 'demo123', name: 'Demo User' }
-          ];
-
-          useEffect(() => {
-            getSpotifyToken();
-            const savedUser = localStorage.getItem('currentUser');
-            if (savedUser) {
-              const userData = JSON.parse(savedUser);
-              setUser(userData);
-              loadUserPlaylists(userData.id);
-            }
-          }, []);
-
-          const getSpotifyToken = async () => {
-            try {
-              const response = await fetch('http://localhost:3000/spotify-token');
-              const data = await response.json();
-              setSpotifyToken(data.access_token);
-            } catch (error) {
-              console.error('Error obteniendo token desde servidor local:', error);
-            }
-          };
-
-
-          const handleLogin = async () => {
-            try {
-              const res = await fetch("http://localhost:3000/login", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(loginData)
-              });
-
-              const data = await res.json();
-
-              if (res.ok) {
-                setUser(data);
-                localStorage.setItem("currentUser", JSON.stringify(data));
-                loadUserPlaylists(data.id);
-                setView("home");
-              } else {
-                alert(data.error || "Credenciales incorrectas");
-              }
-            } catch (err) {
-              alert("Error en login");
-            }
-          };
-
-
-          const handleRegister = async () => {
-            try {
-              const res = await fetch("http://localhost:3000/register", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(registerData)
-              });
-
-              const data = await res.json();
-
-              if (res.ok) {
-                setUser(data);
-                localStorage.setItem("currentUser", JSON.stringify(data));
-                setView("home");
-              } else {
-                alert(data.error || "No se pudo registrar");
-              }
-            } catch (err) {
-              alert("Error en registro");
-            }
-          };
-
-
-          const handleLogout = () => {
-            setUser(null);
-            localStorage.removeItem('currentUser');
-            setView('home');
-            setSavedPlaylists([]);
-          };
-
-          const loadUserPlaylists = async (userId) => {
-            const res = await fetch(`http://localhost:3000/user-playlists/${userId}`);
-            const data = await res.json();
-            setSavedPlaylists(data);
-            calculateStats(data);
-          };
-
-
-          const calculateStats = (playlists) => {
-            const moodCount = {};
-            playlists.forEach(pl => {
-              moodCount[pl.mood] = (moodCount[pl.mood] || 0) + 1;
-            });
-            const favMood = Object.keys(moodCount).length > 0 
-              ? Object.keys(moodCount).reduce((a, b) => moodCount[a] > moodCount[b] ? a : b)
-              : 'Feliz';
-            
-            setUserStats({
-              totalPlaylists: playlists.length,
-              favoriteMood: favMood.charAt(0).toUpperCase() + favMood.slice(1)
-            });
-          };
-
-          const generatePlaylistFromMood = async () => {
-            if (!userMood.trim()) {
-              alert('Por favor, dinos cómo te sientes');
-              return;
-            }
-
-            if (!spotifyToken) {
-              alert('Esperando conexión con Spotify. Intenta de nuevo en unos segundos.');
-              return;
-            }
-
-            setIsGenerating(true);
-
-            const normalizedMood = userMood.toLowerCase().trim();
-            let moodConfig = null;
-            let detectedMood = normalizedMood;
-
-            for (const [mood, config] of Object.entries(MOOD_DATABASE)) {
-              if (normalizedMood.includes(mood) || mood.includes(normalizedMood)) {
-                moodConfig = config;
-                detectedMood = mood;
-                break;
-              }
-            }
-
-            if (!moodConfig) {
-              moodConfig = {
-                genres: ['pop'],
-                energy: 'medium',
-                tempo: 'medium',
-                keywords: [normalizedMood]
-              };
-            }
-
-            try {
-              const allTracks = [];
-              
-              for (const genre of moodConfig.genres.slice(0, 2)) {
-                // LLAMADA A LA API REAL DE SPOTIFY PARA LA BÚSQUEDA DE PISTAS
-                const searchQuery = `${genre} ${moodConfig.keywords[0]}`;
-                const response = await fetch(
-                  `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=8`,
-                  {
-                    headers: {
-                      'Authorization': `Bearer ${spotifyToken}`
-                    }
-                  }
-                );
-                
-                const data = await response.json();
-                if (data.tracks && data.tracks.items) {
-                  allTracks.push(...data.tracks.items);
-                }
-              }
-
-              const uniqueTracks = Array.from(new Map(allTracks.map(t => [t.id, t])).values());
-              const shuffled = uniqueTracks.sort(() => Math.random() - 0.5).slice(0, 15);
-
-              const tracks = shuffled.map(track => ({
-                id: track.id,
-                name: track.name,
-                // Asegura el acceso seguro a los artistas y la imagen del álbum
-                artist: track.artists?.[0]?.name || 'Artista Desconocido',
-                album: track.album?.name || 'Álbum Desconocido',
-                image: track.album?.images?.[0]?.url,
-                preview: track.preview_url,
-                uri: track.uri
-              }));
-
-              if (tracks.length === 0) {
-                 throw new Error("No se encontraron canciones para tu estado de ánimo.");
-              }
-
-              const playlist = {
-                id: Date.now(),
-                name: `${detectedMood.charAt(0).toUpperCase() + detectedMood.slice(1)} Vibes`,
-                mood: detectedMood,
-                originalInput: userMood,
-                tracks,
-                createdAt: new Date().toISOString()
-              };
-
-              setGeneratedPlaylist(playlist);
-              setView('playlist');
-              setIsGenerating(false);
-            } catch (error) {
-              console.error('Error generando playlist:', error);
-              alert(`Error al generar playlist: ${error.message || 'Intenta de nuevo.'}`);
-              setIsGenerating(false);
-            }
-          };
-
-            const savePlaylist = async () => {
-              if (!user) {
-                alert("Debes iniciar sesión para guardar playlists");
-                return;
-              }
-
-              const payload = {
-                user_id: user.id,
-                name: generatedPlaylist.name,
-                mood: generatedPlaylist.mood,
-                playlist: generatedPlaylist.tracks
-              };
-
-              const res = await fetch("http://localhost:3000/save-playlist", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-              });
-
-              if (res.ok) {
-                alert("Playlist guardada!");
-                loadUserPlaylists(user.id);
-              } else {
-                alert("Error al guardar playlist");
-              }
-            };
-
-
-          const sharePlaylist = (playlist) => {
-            const shareUrl = `${window.location.origin}/playlist/${playlist.id}`;
-            navigator.clipboard.writeText(shareUrl);
-            alert('¡Link copiado al portapapeles!');
-          };
-
-          const exportToSpotify = () => {
-            alert('Para exportar a Spotify necesitas conectar tu cuenta (OAuth). Esta funcionalidad requiere un servidor backend (PHP).');
-          };
-
-          const LoginView = () => (
+        /**********************************************
+         COMPONENTES REUTILIZABLES (FUERA DEL PRINCIPAL)
+        **********************************************/
+        function LoginView({ loginData, setLoginData, handleLogin, setView }) {
+          return (
             <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-2xl shadow-2xl">
               <div className="text-center mb-8">
                 <Music className="w-16 h-16 mx-auto text-green-500 mb-4" />
@@ -370,14 +123,14 @@
                 <input
                   type="email"
                   value={loginData.email}
-                  onChange={(e) => setLoginData({...loginData, email: e.target.value})}
+                  onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
                   placeholder="Email"
                   className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
                 />
                 <input
                   type="password"
                   value={loginData.password}
-                  onChange={(e) => setLoginData({...loginData, password: e.target.value})}
+                  onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
                   placeholder="Contraseña"
                   className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
                 />
@@ -386,8 +139,8 @@
                 </button>
               </div>
               <p className="text-center mt-4 text-gray-600">
-                ¿No tienes cuenta?{' '}
-                <button onClick={() => setView('register')} className="text-green-500 hover:underline">
+                ¿No tienes cuenta?{" "}
+                <button onClick={() => setView("register")} className="text-green-500 hover:underline">
                   Regístrate
                 </button>
               </p>
@@ -396,8 +149,10 @@
               </p>
             </div>
           );
+        }
 
-          const RegisterView = () => (
+        function RegisterView({ registerData, setRegisterData, handleRegister, setView }) {
+          return (
             <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-2xl shadow-2xl">
               <div className="text-center mb-8">
                 <UserPlus className="w-16 h-16 mx-auto text-green-500 mb-4" />
@@ -407,21 +162,21 @@
                 <input
                   type="text"
                   value={registerData.name}
-                  onChange={(e) => setRegisterData({...registerData, name: e.target.value})}
+                  onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
                   placeholder="Nombre completo"
                   className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
                 />
                 <input
                   type="email"
                   value={registerData.email}
-                  onChange={(e) => setRegisterData({...registerData, email: e.target.value})}
+                  onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
                   placeholder="Email"
                   className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
                 />
                 <input
                   type="password"
                   value={registerData.password}
-                  onChange={(e) => setRegisterData({...registerData, password: e.target.value})}
+                  onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
                   placeholder="Contraseña"
                   className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
                 />
@@ -430,15 +185,42 @@
                 </button>
               </div>
               <p className="text-center mt-4 text-gray-600">
-                ¿Ya tienes cuenta?{' '}
-                <button onClick={() => setView('login')} className="text-green-500 hover:underline">
+                ¿Ya tienes cuenta?{" "}
+                <button onClick={() => setView("login")} className="text-green-500 hover:underline">
                   Inicia sesión
                 </button>
               </p>
             </div>
           );
+        }
 
-          const HomeView = () => (
+        function MoodQuickButton({ mood, onClick }) {
+          const emojis = {
+            'feliz': '😊',
+            'triste': '😢',
+            'relajado': '😌',
+            'enérgico': '⚡',
+            'concentrado': '🎯',
+            'romántico': '❤️',
+            'nostálgico': '🌅',
+            'motivado': '💪',
+            'ansioso': '😰',
+            'aburrido': '😐'
+          };
+
+          return (
+            <button
+              onClick={onClick}
+              className="bg-white p-4 rounded-xl shadow-lg hover:scale-105 transition transform hover:shadow-xl"
+            >
+              <div className="text-3xl mb-2">{emojis[mood]}</div>
+              <p className="text-sm font-semibold text-gray-800 capitalize">{mood}</p>
+            </button>
+          );
+        }
+
+        function HomeView({ userMood, setUserMood, generatePlaylistFromMood, isGenerating }) {
+          return (
             <div className="max-w-4xl mx-auto mt-10 p-8">
               <div className="text-center mb-12">
                 <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
@@ -485,52 +267,38 @@
                 <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">O elige un estado de ánimo</h2>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   {Object.keys(MOOD_DATABASE).map((mood) => (
-                    <MoodQuickButton key={mood} mood={mood} onClick={() => {
-                      setUserMood(mood);
-                      setTimeout(() => generatePlaylistFromMood(), 100);
-                    }} />
+                    <MoodQuickButton
+                      key={mood}
+                      mood={mood}
+                      onClick={() => {
+                        setUserMood(mood);
+                        setTimeout(() => generatePlaylistFromMood(), 100);
+                      }}
+                    />
                   ))}
                 </div>
               </div>
             </div>
           );
+        }
 
-          const MoodQuickButton = ({ mood, onClick }) => {
-            const emojis = {
-              'feliz': '😊',
-              'triste': '😢',
-              'relajado': '😌',
-              'enérgico': '⚡',
-              'concentrado': '🎯',
-              'romántico': '❤️',
-              'nostálgico': '🌅',
-              'motivado': '💪',
-              'ansioso': '😰',
-              'aburrido': '😐'
-            };
+        function PlaylistView({ generatedPlaylist, user, savePlaylist, sharePlaylist, exportToSpotify, setView }) {
+          if (!generatedPlaylist) return null;
 
-            return (
-              <button
-                onClick={onClick}
-                className="bg-white p-4 rounded-xl shadow-lg hover:scale-105 transition transform hover:shadow-xl"
-              >
-                <div className="text-3xl mb-2">{emojis[mood]}</div>
-                <p className="text-sm font-semibold text-gray-800 capitalize">{mood}</p>
-              </button>
-            );
-          };
-
-          const PlaylistView = () => (
+          return (
             <div className="max-w-4xl mx-auto mt-10 p-8">
               <div className="bg-white rounded-2xl shadow-2xl p-8">
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-3xl font-bold text-gray-800">{generatedPlaylist.name}</h2>
                     <p className="text-gray-500 mt-1">
-                      Basado en: <span className="font-semibold capitalize">{generatedPlaylist.originalInput}</span>
+                      Basado en:{" "}
+                      <span className="font-semibold capitalize">
+                        {generatedPlaylist.originalInput}
+                      </span>
                     </p>
                   </div>
-                  <button onClick={() => setView('home')} className="text-gray-500 hover:text-gray-700">
+                  <button onClick={() => setView("home")} className="text-gray-500 hover:text-gray-700">
                     ← Volver
                   </button>
                 </div>
@@ -568,12 +336,19 @@
 
                 <div className="space-y-3">
                   {generatedPlaylist.tracks.map((track, idx) => (
-                    <div key={track.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                    <div
+                      key={track.id}
+                      className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                    >
                       <span className="text-gray-400 font-bold w-8">{idx + 1}</span>
-                      {track.image && <img src={track.image} alt={track.name} className="w-16 h-16 rounded shadow" />}
+                      {track.image && (
+                        <img src={track.image} alt={track.name} className="w-16 h-16 rounded shadow" />
+                      )}
                       <div className="flex-1">
                         <p className="font-semibold text-gray-800">{track.name}</p>
-                        <p className="text-sm text-gray-600">{track.artist} • {track.album}</p>
+                        <p className="text-sm text-gray-600">
+                          {track.artist} • {track.album}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -581,18 +356,20 @@
               </div>
             </div>
           );
+        }
 
-          const ProfileView = () => (
+        function ProfileView({ userStats, savedPlaylists, setView, setGeneratedPlaylist, sharePlaylist }) {
+          return (
             <div className="max-w-4xl mx-auto mt-10 p-8">
               <div className="bg-white rounded-2xl shadow-2xl p-8">
                 <h2 className="text-3xl font-bold text-gray-800 mb-6">Mi Perfil</h2>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                   <div className="bg-green-50 p-6 rounded-xl text-center">
                     <TrendingUp className="w-12 h-12 mx-auto text-green-500 mb-2" />
                     <p className="text-3xl font-bold text-gray-800">{userStats.totalPlaylists}</p>
                     <p className="text-gray-600">Playlists Guardadas</p>
-                    </div>
+                  </div>
                   <div className="bg-purple-50 p-6 rounded-xl text-center">
                     <Sparkles className="w-12 h-12 mx-auto text-purple-500 mb-2" />
                     <p className="text-3xl font-bold text-gray-800">{userStats.favoriteMood}</p>
@@ -600,7 +377,9 @@
                   </div>
                   <div className="bg-blue-50 p-6 rounded-xl text-center">
                     <Music className="w-12 h-12 mx-auto text-blue-500 mb-2" />
-                    <p className="text-3xl font-bold text-gray-800">{savedPlaylists.reduce((acc, pl) => acc + pl.tracks.length, 0)}</p>
+                    <p className="text-3xl font-bold text-gray-800">
+                      {savedPlaylists.reduce((acc, pl) => acc + pl.tracks.length, 0)}
+                    </p>
                     <p className="text-gray-600">Canciones Totales</p>
                   </div>
                 </div>
@@ -611,25 +390,31 @@
                     <div className="text-center py-12">
                       <Music className="w-16 h-16 mx-auto text-gray-300 mb-4" />
                       <p className="text-gray-500">No tienes playlists guardadas aún</p>
-                      <button 
-                        onClick={() => setView('home')}
+                      <button
+                        onClick={() => setView("home")}
                         className="mt-4 text-green-500 hover:text-green-600 font-semibold"
                       >
                         Generar mi primera playlist →
                       </button>
                     </div>
                   ) : (
-                    savedPlaylists.map(pl => (
-                      <div key={pl.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                    savedPlaylists.map((pl) => (
+                      <div
+                        key={pl.id}
+                        className="flex justify-between items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition"
+                      >
                         <div>
                           <p className="font-semibold text-gray-800">{pl.name}</p>
-                          <p className="text-sm text-gray-600">{pl.tracks.length} canciones • <span className="capitalize">{pl.mood}</span></p>
+                          <p className="text-sm text-gray-600">
+                            {pl.tracks.length} canciones •{" "}
+                            <span className="capitalize">{pl.mood}</span>
+                          </p>
                         </div>
                         <div className="flex gap-3">
                           <button
                             onClick={() => {
                               setGeneratedPlaylist(pl);
-                              setView('playlist');
+                              setView("playlist");
                             }}
                             className="text-green-500 hover:text-green-600 font-semibold"
                           >
@@ -649,36 +434,55 @@
               </div>
             </div>
           );
+        }
 
-          const Navigation = () => (
+        function Navigation({ user, setView, handleLogout }) {
+          return (
             <nav className="bg-gradient-to-r from-green-500 to-green-600 text-white p-4 shadow-lg">
               <div className="max-w-6xl mx-auto flex justify-between items-center">
                 <div className="flex items-center gap-2 text-2xl font-bold">
                   <Music className="w-8 h-8" />
                   MoodPlaylist
                 </div>
-                
+
                 <div className="flex items-center gap-6">
-                  <button onClick={() => setView('home')} className="flex items-center gap-2 hover:text-green-200 transition">
+                  <button
+                    onClick={() => setView("home")}
+                    className="flex items-center gap-2 hover:text-green-200 transition"
+                  >
                     <Home className="w-5 h-5" /> Home
                   </button>
-                  
+
                   {user ? (
                     <>
-                      <button onClick={() => setView('profile')} className="flex items-center gap-2 hover:text-green-200 transition">
+                      <button
+                        onClick={() => setView("profile")}
+                        className="flex items-center gap-2 hover:text-green-200 transition"
+                      >
                         <User className="w-5 h-5" /> Perfil
                       </button>
-                      <button onClick={handleLogout} className="flex items-center gap-2 hover:text-green-200 transition">
+                      <button
+                        onClick={handleLogout}
+                        className="flex items-center gap-2 hover:text-green-200 transition"
+                      >
                         <LogOut className="w-5 h-5" /> Salir
                       </button>
-                      <span className="text-sm bg-green-600 px-3 py-1 rounded-full">👋 {user.name}</span>
+                      <span className="text-sm bg-green-600 px-3 py-1 rounded-full">
+                        👋 {user.name}
+                      </span>
                     </>
                   ) : (
                     <>
-                      <button onClick={() => setView('login')} className="flex items-center gap-2 hover:text-green-200 transition">
+                      <button
+                        onClick={() => setView("login")}
+                        className="flex items-center gap-2 hover:text-green-200 transition"
+                      >
                         <LogIn className="w-5 h-5" /> Iniciar Sesión
                       </button>
-                      <button onClick={() => setView('register')} className="flex items-center gap-2 hover:text-green-200 transition">
+                      <button
+                        onClick={() => setView("register")}
+                        className="flex items-center gap-2 hover:text-green-200 transition"
+                      >
                         <UserPlus className="w-5 h-5" /> Registrarse
                       </button>
                     </>
@@ -687,22 +491,306 @@
               </div>
             </nav>
           );
+        }
+
+        /**********************************************
+         COMPONENTE PRINCIPAL
+        **********************************************/
+        function SpotifyPlaylistGenerator() {
+          const [user, setUser] = useState(null);
+          const [view, setView] = useState("home");
+          const [spotifyToken, setSpotifyToken] = useState(null);
+          const [generatedPlaylist, setGeneratedPlaylist] = useState(null);
+          const [savedPlaylists, setSavedPlaylists] = useState([]);
+          const [userStats, setUserStats] = useState({ totalPlaylists: 0, favoriteMood: "Feliz" });
+          const [loginData, setLoginData] = useState({ email: "", password: "" });
+          const [registerData, setRegisterData] = useState({ name: "", email: "", password: "" });
+          const [userMood, setUserMood] = useState("");
+          const [isGenerating, setIsGenerating] = useState(false);
+
+          useEffect(() => {
+            getSpotifyToken();
+            const savedUser = localStorage.getItem("currentUser");
+            if (savedUser) {
+              const userData = JSON.parse(savedUser);
+              setUser(userData);
+              loadUserPlaylists(userData.id);
+            }
+          }, []);
+
+          const getSpotifyToken = async () => {
+            try {
+              const response = await fetch("http://localhost:3000/spotify-token");
+              const data = await response.json();
+              setSpotifyToken(data.access_token);
+            } catch (error) {
+              console.error("Error obteniendo token desde servidor local:", error);
+            }
+          };
+
+          const handleLogin = async () => {
+            try {
+              const res = await fetch("http://localhost:3000/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(loginData)
+              });
+
+              const data = await res.json();
+
+              if (res.ok) {
+                setUser(data);
+                localStorage.setItem("currentUser", JSON.stringify(data));
+                loadUserPlaylists(data.id);
+                setView("home");
+              } else {
+                alert(data.error || "Credenciales incorrectas");
+              }
+            } catch (err) {
+              alert("Error en login");
+            }
+          };
+
+          const handleRegister = async () => {
+            try {
+              const res = await fetch("http://localhost:3000/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(registerData)
+              });
+
+              const data = await res.json();
+
+              if (res.ok) {
+                setUser(data);
+                localStorage.setItem("currentUser", JSON.stringify(data));
+                setView("home");
+              } else {
+                alert(data.error || "No se pudo registrar");
+              }
+            } catch (err) {
+              alert("Error en registro");
+            }
+          };
+
+          const handleLogout = () => {
+            setUser(null);
+            localStorage.removeItem("currentUser");
+            setView("home");
+            setSavedPlaylists([]);
+          };
+
+          const loadUserPlaylists = async (userId) => {
+            const res = await fetch(`http://localhost:3000/user-playlists/${userId}`);
+            const data = await res.json();
+            setSavedPlaylists(data);
+            calculateStats(data);
+          };
+
+          const calculateStats = (playlists) => {
+            const moodCount = {};
+            playlists.forEach((pl) => {
+              moodCount[pl.mood] = (moodCount[pl.mood] || 0) + 1;
+            });
+            const favMood =
+              Object.keys(moodCount).length > 0
+                ? Object.keys(moodCount).reduce((a, b) => (moodCount[a] > moodCount[b] ? a : b))
+                : "Feliz";
+
+            setUserStats({
+              totalPlaylists: playlists.length,
+              favoriteMood: favMood.charAt(0).toUpperCase() + favMood.slice(1)
+            });
+          };
+
+          const generatePlaylistFromMood = async () => {
+            if (!userMood.trim()) {
+              alert("Por favor, dinos cómo te sientes");
+              return;
+            }
+
+            if (!spotifyToken) {
+              alert("Esperando conexión con Spotify. Intenta de nuevo en unos segundos.");
+              return;
+            }
+
+            setIsGenerating(true);
+
+            const normalizedMood = userMood.toLowerCase().trim();
+            let moodConfig = null;
+            let detectedMood = normalizedMood;
+
+            for (const [mood, config] of Object.entries(MOOD_DATABASE)) {
+              if (normalizedMood.includes(mood) || mood.includes(normalizedMood)) {
+                moodConfig = config;
+                detectedMood = mood;
+                break;
+              }
+            }
+
+            if (!moodConfig) {
+              moodConfig = {
+                genres: ["pop"],
+                energy: "medium",
+                tempo: "medium",
+                keywords: [normalizedMood]
+              };
+            }
+
+            try {
+              const allTracks = [];
+
+              for (const genre of moodConfig.genres.slice(0, 2)) {
+                const searchQuery = `${genre} ${moodConfig.keywords[0]}`;
+                const response = await fetch(
+                  `https://api.spotify.com/v1/search?q=${encodeURIComponent(
+                    searchQuery
+                  )}&type=track&limit=8`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${spotifyToken}`
+                    }
+                  }
+                );
+
+                const data = await response.json();
+                if (data.tracks && data.tracks.items) {
+                  allTracks.push(...data.tracks.items);
+                }
+              }
+
+              const uniqueTracks = Array.from(new Map(allTracks.map((t) => [t.id, t])).values());
+              const shuffled = uniqueTracks.sort(() => Math.random() - 0.5).slice(0, 15);
+
+              const tracks = shuffled.map((track) => ({
+                id: track.id,
+                name: track.name,
+                artist: track.artists?.[0]?.name || "Artista Desconocido",
+                album: track.album?.name || "Álbum Desconocido",
+                image: track.album?.images?.[0]?.url,
+                preview: track.preview_url,
+                uri: track.uri
+              }));
+
+              if (tracks.length === 0) {
+                throw new Error("No se encontraron canciones para tu estado de ánimo.");
+              }
+
+              const playlist = {
+                id: Date.now(),
+                name: `${detectedMood.charAt(0).toUpperCase() + detectedMood.slice(1)} Vibes`,
+                mood: detectedMood,
+                originalInput: userMood,
+                tracks,
+                createdAt: new Date().toISOString()
+              };
+
+              setGeneratedPlaylist(playlist);
+              setView("playlist");
+              setIsGenerating(false);
+            } catch (error) {
+              console.error("Error generando playlist:", error);
+              alert(`Error al generar playlist: ${error.message || "Intenta de nuevo."}`);
+              setIsGenerating(false);
+            }
+          };
+
+          const savePlaylist = async () => {
+            if (!user) {
+              alert("Debes iniciar sesión para guardar playlists");
+              return;
+            }
+
+            const payload = {
+              user_id: user.id,
+              name: generatedPlaylist.name,
+              mood: generatedPlaylist.mood,
+              playlist: generatedPlaylist.tracks
+            };
+
+            const res = await fetch("http://localhost:3000/save-playlist", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+              alert("Playlist guardada!");
+              loadUserPlaylists(user.id);
+            } else {
+              alert("Error al guardar playlist");
+            }
+          };
+
+          const sharePlaylist = (playlist) => {
+            const shareUrl = `${window.location.origin}/playlist/${playlist.id}`;
+            navigator.clipboard.writeText(shareUrl);
+            alert("¡Link copiado al portapapeles!");
+          };
+
+          const exportToSpotify = () => {
+            alert(
+              "Para exportar a Spotify necesitas conectar tu cuenta (OAuth). Esta funcionalidad requiere un servidor backend adicional."
+            );
+          };
 
           return (
             <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50">
-              <Navigation />
-              
-              {view === 'home' && <HomeView />}
-              {view === 'login' && <LoginView />}
-              {view === 'register' && <RegisterView />}
-              {view === 'playlist' && generatedPlaylist && <PlaylistView />}
-              {view === 'profile' && user && <ProfileView />}
+              <Navigation user={user} setView={setView} handleLogout={handleLogout} />
+
+              {view === "home" && (
+                <HomeView
+                  userMood={userMood}
+                  setUserMood={setUserMood}
+                  generatePlaylistFromMood={generatePlaylistFromMood}
+                  isGenerating={isGenerating}
+                />
+              )}
+
+              {view === "login" && (
+                <LoginView
+                  loginData={loginData}
+                  setLoginData={setLoginData}
+                  handleLogin={handleLogin}
+                  setView={setView}
+                />
+              )}
+
+              {view === "register" && (
+                <RegisterView
+                  registerData={registerData}
+                  setRegisterData={setRegisterData}
+                  handleRegister={handleRegister}
+                  setView={setView}
+                />
+              )}
+
+              {view === "playlist" && (
+                <PlaylistView
+                  generatedPlaylist={generatedPlaylist}
+                  user={user}
+                  savePlaylist={savePlaylist}
+                  sharePlaylist={sharePlaylist}
+                  exportToSpotify={exportToSpotify}
+                  setView={setView}
+                />
+              )}
+
+              {view === "profile" && user && (
+                <ProfileView
+                  userStats={userStats}
+                  savedPlaylists={savedPlaylists}
+                  setView={setView}
+                  setGeneratedPlaylist={setGeneratedPlaylist}
+                  sharePlaylist={sharePlaylist}
+                />
+              )}
             </div>
           );
         }
 
         // Renderizar la aplicación
-        const root = ReactDOM.createRoot(document.getElementById('root'));
+        const root = ReactDOM.createRoot(document.getElementById("root"));
         root.render(<SpotifyPlaylistGenerator />);
     </script>
 </body>
