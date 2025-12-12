@@ -1,21 +1,21 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const db = require("./database/db"); // NUEVO
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 app.use(express.static(__dirname));
 
-// ⚙️ Credenciales Spotify
+// =============================================
+// SPOTIFY TOKEN  (tu código original)
+// =============================================
 const CLIENT_ID = "1b82ef41f6ac45dd8e363f255de9ab73";
 const CLIENT_SECRET = "13afd66fb7614809b0d0eff626cbb813";
 
-// 🎧 Endpoint para obtener token de Spotify
 app.get("/spotify-token", async (req, res) => {
   try {
-    console.log("📡 Solicitando token a Spotify...");
-
-    // fetch nativo (ya disponible en Node 18+)
     const response = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
       headers: {
@@ -28,22 +28,94 @@ app.get("/spotify-token", async (req, res) => {
     });
 
     const data = await response.json();
-
-    if (!response.ok) {
-      console.error("❌ Error de respuesta Spotify:", data);
-      return res.status(500).json({ error: "Spotify API error", details: data });
-    }
-
-    console.log("✅ Token recibido correctamente");
     res.json(data);
   } catch (err) {
-    console.error("🔥 Error al solicitar token:", err);
-    res.status(500).json({ error: "Error interno en el servidor", details: err.message });
+    res.status(500).json({ error: "Error token Spotify", details: err });
   }
 });
 
+// =============================================
+// ENDPOINTS DE AUTENTICACIÓN CON SQLITE
+// =============================================
+
+// REGISTRO
+app.post("/register", (req, res) => {
+  const { name, email, password } = req.body;
+
+  db.run(
+    `INSERT INTO users (name, email, password) VALUES (?, ?, ?)`,
+    [name, email, password],
+    function (err) {
+      if (err) {
+        return res.status(400).json({ error: "Email ya existe" });
+      }
+      res.json({ id: this.lastID, name, email });
+    }
+  );
+});
+
+// LOGIN
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+
+  db.get(
+    `SELECT id, name, email FROM users WHERE email = ? AND password = ?`,
+    [email, password],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: "Error interno" });
+
+      if (!row) return res.status(401).json({ error: "Credenciales inválidas" });
+
+      res.json(row);
+    }
+  );
+});
+
+// =============================================
+// PLAYLISTS
+// =============================================
+
+// GUARDAR PLAYLIST
+app.post("/save-playlist", (req, res) => {
+  const { user_id, name, mood, playlist } = req.body;
+
+  db.run(
+    `INSERT INTO playlists (user_id, name, mood, data, created_at)
+     VALUES (?, ?, ?, ?, datetime('now'))`,
+    [user_id, name, mood, JSON.stringify(playlist)],
+    function (err) {
+      if (err) return res.status(500).json({ error: "Error guardando playlist" });
+
+      res.json({ playlist_id: this.lastID });
+    }
+  );
+});
+
+// OBTENER PLAYLISTS DEL USUARIO
+app.get("/user-playlists/:user_id", (req, res) => {
+  db.all(
+    `SELECT id, name, mood, data, created_at FROM playlists WHERE user_id = ?`,
+    [req.params.user_id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: "Error obteniendo playlists" });
+
+      const formatted = rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        mood: r.mood,
+        createdAt: r.created_at,
+        tracks: JSON.parse(r.data)
+      }));
+
+      res.json(formatted);
+    }
+  );
+});
+
+// =============================================
+// SERVIDOR
+// =============================================
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en http://127.0.0.1:${PORT}`);
-  console.log(`🌐 Abre tu app en http://127.0.0.1:${PORT}/index.html`);
+  console.log(`Servidor corriendo en http://127.0.0.1:${PORT}`);
 });

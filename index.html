@@ -153,34 +153,52 @@
           };
 
 
-          const handleLogin = () => {
-            const foundUser = mockUsers.find(u => u.email === loginData.email && u.password === loginData.password);
-            
-            if (foundUser) {
-              setUser(foundUser);
-              localStorage.setItem('currentUser', JSON.stringify(foundUser));
-              loadUserPlaylists(foundUser.id);
-              setView('home');
-              setLoginData({ email: '', password: '' });
-            } else {
-              alert('Credenciales incorrectas');
+          const handleLogin = async () => {
+            try {
+              const res = await fetch("http://localhost:3000/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(loginData)
+              });
+
+              const data = await res.json();
+
+              if (res.ok) {
+                setUser(data);
+                localStorage.setItem("currentUser", JSON.stringify(data));
+                loadUserPlaylists(data.id);
+                setView("home");
+              } else {
+                alert(data.error || "Credenciales incorrectas");
+              }
+            } catch (err) {
+              alert("Error en login");
             }
           };
 
-          const handleRegister = () => {
-            const newUser = {
-              id: Date.now(),
-              name: registerData.name,
-              email: registerData.email,
-              password: registerData.password
-            };
-            
-            mockUsers.push(newUser);
-            setUser(newUser);
-            localStorage.setItem('currentUser', JSON.stringify(newUser));
-            setView('home');
-            setRegisterData({ name: '', email: '', password: '' });
+
+          const handleRegister = async () => {
+            try {
+              const res = await fetch("http://localhost:3000/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(registerData)
+              });
+
+              const data = await res.json();
+
+              if (res.ok) {
+                setUser(data);
+                localStorage.setItem("currentUser", JSON.stringify(data));
+                setView("home");
+              } else {
+                alert(data.error || "No se pudo registrar");
+              }
+            } catch (err) {
+              alert("Error en registro");
+            }
           };
+
 
           const handleLogout = () => {
             setUser(null);
@@ -189,14 +207,13 @@
             setSavedPlaylists([]);
           };
 
-          const loadUserPlaylists = (userId) => {
-            const saved = localStorage.getItem(`playlists_${userId}`);
-            if (saved) {
-              const playlists = JSON.parse(saved);
-              setSavedPlaylists(playlists);
-              calculateStats(playlists);
-            }
+          const loadUserPlaylists = async (userId) => {
+            const res = await fetch(`http://localhost:3000/user-playlists/${userId}`);
+            const data = await res.json();
+            setSavedPlaylists(data);
+            calculateStats(data);
           };
+
 
           const calculateStats = (playlists) => {
             const moodCount = {};
@@ -305,18 +322,33 @@
             }
           };
 
-          const savePlaylist = () => {
-            if (!user) {
-              alert('Debes iniciar sesión para guardar playlists');
-              return;
-            }
+            const savePlaylist = async () => {
+              if (!user) {
+                alert("Debes iniciar sesión para guardar playlists");
+                return;
+              }
 
-            const updated = [...savedPlaylists, generatedPlaylist];
-            setSavedPlaylists(updated);
-            localStorage.setItem(`playlists_${user.id}`, JSON.stringify(updated));
-            calculateStats(updated);
-            alert('¡Playlist guardada!');
-          };
+              const payload = {
+                user_id: user.id,
+                name: generatedPlaylist.name,
+                mood: generatedPlaylist.mood,
+                playlist: generatedPlaylist.tracks
+              };
+
+              const res = await fetch("http://localhost:3000/save-playlist", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+              });
+
+              if (res.ok) {
+                alert("Playlist guardada!");
+                loadUserPlaylists(user.id);
+              } else {
+                alert("Error al guardar playlist");
+              }
+            };
+
 
           const sharePlaylist = (playlist) => {
             const shareUrl = `${window.location.origin}/playlist/${playlist.id}`;
