@@ -1,254 +1,247 @@
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
-const db = require("./database/db"); // NUEVO
+const bodyParser = require("body-parser");
+const db = require("./database/db.js");
+const spotifyAuth = require("./database/authSpotify.js");
+const axios = require("axios");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
-app.use(express.static(__dirname));
+app.use(bodyParser.json());
+app.use(express.static("."));
 
-// =============================================
-// SPOTIFY TOKEN
-// =============================================
 const CLIENT_ID = "1b82ef41f6ac45dd8e363f255de9ab73";
 const CLIENT_SECRET = "13afd66fb7614809b0d0eff626cbb813";
 
-app.get("/spotify-token", async (req, res) => {
-  try {
-    const response = await fetch("https://accounts.spotify.com/api/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization":
-          "Basic " +
-          Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64"),
-      },
-      body: "grant_type=client_credentials",
-    });
-
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: "Error token Spotify", details: err });
-  }
-});
-
-// =============================================
-// ENDPOINTS DE AUTENTICACIÓN CON SQLITE
-// =============================================
-
-// REGISTRO
-app.post("/register", (req, res) => {
-  const { name, email, password } = req.body;
-
-  db.run(
-    `INSERT INTO users (name, email, password) VALUES (?, ?, ?)`,
-    [name, email, password],
-    function (err) {
-      if (err) {
-        return res.status(400).json({ error: "Email ya existe" });
-      }
-      res.json({ id: this.lastID, name, email });
-    }
-  );
-});
-
+// ======================================
 // LOGIN
+// ======================================
 app.post("/login", (req, res) => {
   const { email, password } = req.body;
 
   db.get(
-    `SELECT id, name, email FROM users WHERE email = ? AND password = ?`,
+    "SELECT * FROM users WHERE email = ? AND password = ?",
     [email, password],
     (err, row) => {
-      if (err) return res.status(500).json({ error: "Error interno" });
-
-      if (!row) return res.status(401).json({ error: "Credenciales inválidas" });
+      if (err) return res.status(500).json({ error: "DB error" });
+      if (!row) return res.status(400).json({ error: "Credenciales incorrectas" });
 
       res.json(row);
     }
   );
 });
 
-// =============================================
-// PLAYLISTS
-// =============================================
+// ======================================
+// REGISTRO
+// ======================================
+app.post("/register", (req, res) => {
+  const { name, email, password } = req.body;
 
-// GUARDAR PLAYLIST
+  db.run(
+    "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
+    [name, email, password],
+    function (err) {
+      if (err) return res.status(500).json({ error: "El email ya existe" });
+
+      res.json({
+        id: this.lastID,
+        name,
+        email
+      });
+    }
+  );
+});
+
+// ======================================
+// GUARDAR PLAYLIST LOCAL (SQLite)
+// ======================================
 app.post("/save-playlist", (req, res) => {
   const { user_id, name, mood, playlist } = req.body;
 
   db.run(
-    `INSERT INTO playlists (user_id, name, mood, data, created_at)
-     VALUES (?, ?, ?, ?, datetime('now'))`,
+    "INSERT INTO playlists (user_id, name, mood, tracks) VALUES (?, ?, ?, ?)",
     [user_id, name, mood, JSON.stringify(playlist)],
     function (err) {
-      if (err) return res.status(500).json({ error: "Error guardando playlist" });
+      if (err) return res.status(500).json({ error: "DB error" });
 
-      res.json({ playlist_id: this.lastID });
+      res.json({ message: "Playlist guardada" });
     }
   );
 });
 
+// ======================================
 // OBTENER PLAYLISTS DEL USUARIO
-app.get("/user-playlists/:user_id", (req, res) => {
+// ======================================
+app.get("/user-playlists/:id", (req, res) => {
   db.all(
-    `SELECT id, name, mood, data, created_at FROM playlists WHERE user_id = ?`,
-    [req.params.user_id],
+    "SELECT * FROM playlists WHERE user_id = ? ORDER BY id DESC",
+    [req.params.id],
     (err, rows) => {
-      if (err) return res.status(500).json({ error: "Error obteniendo playlists" });
+      if (err) return res.status(500).json({ error: "DB error" });
 
-      const formatted = rows.map(r => ({
-        id: r.id,
-        name: r.name,
-        mood: r.mood,
-        createdAt: r.created_at,
-        tracks: JSON.parse(r.data)
+      const parsed = rows.map((p) => ({
+        ...p,
+        tracks: JSON.parse(p.tracks)
       }));
 
-      res.json(formatted);
+      res.json(parsed);
     }
   );
 });
 
-// =============================================
-// LIKES DE CANCIONES
-// =============================================
+// ======================================
+// TOKEN APP SPOTIFY (client_credentials) PARA BÚSQUEDAS
+// ======================================
+app.get("/spotify-token", async (req, res) => {
+  try {
+    const result = await axios.post(
+      "https://accounts.spotify.com/api/token",
+      new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET
+      }),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
 
-// 1) Dar LIKE a una canción
-app.post("/api/songs/like", (req, res) => {
-  const {
-    user_id,
-    track_id,
-    track_name,
-    artist,
-    mood,
-    album,
-    image
-  } = req.body;
+    res.json(result.data);
+  } catch (err) {
+    console.error("Error obteniendo token app Spotify:", err.response?.data || err);
+    res.status(500).json({ error: "No se pudo obtener token de Spotify" });
+  }
+});
 
-  if (!user_id || !track_id) {
-    return res.status(400).json({ error: "user_id y track_id son obligatorios" });
+// ======================================
+// VER SI USUARIO TIENE CUENTA SPOTIFY VINCULADA
+// ======================================
+app.get("/spotify/user-token/:userId", (req, res) => {
+  const userId = req.params.userId;
+
+  db.get(
+    "SELECT * FROM spotify_tokens WHERE user_id = ?",
+    [userId],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: "DB error" });
+      if (!row) return res.json({ linked: false });
+
+      res.json({ linked: true });
+    }
+  );
+});
+
+// ======================================
+// EXPORTAR PLAYLIST A SPOTIFY (REAL, PRIVADA)
+// ======================================
+app.post("/spotify/export-playlist", (req, res) => {
+  const { user_id, name, description, uris } = req.body;
+
+  if (!user_id || !name || !Array.isArray(uris) || uris.length === 0) {
+    return res.status(400).json({ error: "Datos insuficientes para exportar playlist." });
   }
 
-  const sql = `
-    INSERT OR IGNORE INTO liked_songs 
-    (user_id, track_id, track_name, artist, mood, album, image)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  db.run(
-    sql,
-    [user_id, track_id, track_name, artist, mood, album, image],
-    function (err) {
-      if (err) {
-        console.error("Error insertando like:", err);
-        return res.status(500).json({ error: "Error guardando like" });
-      }
-
-      // this.changes será 0 si ya existía el like (por UNIQUE)
-      res.json({ success: true });
-    }
-  );
-});
-
-// 2) Quitar LIKE
-app.delete("/api/songs/unlike/:user_id/:track_id", (req, res) => {
-  const { user_id, track_id } = req.params;
-
-  db.run(
-    `DELETE FROM liked_songs WHERE user_id = ? AND track_id = ?`,
-    [user_id, track_id],
-    function (err) {
-      if (err) {
-        console.error("Error borrando like:", err);
-        return res.status(500).json({ error: "Error eliminando like" });
-      }
-
-      res.json({ success: true });
-    }
-  );
-});
-
-// 3) Obtener canciones con LIKE del usuario
-app.get("/api/songs/liked/:user_id", (req, res) => {
-  const { user_id } = req.params;
-
-  db.all(
-    `SELECT 
-       id,
-       track_id,
-       track_name,
-       artist,
-       mood,
-       album,
-       image,
-       created_at
-     FROM liked_songs
-     WHERE user_id = ?
-     ORDER BY created_at DESC`,
+  db.get(
+    "SELECT * FROM spotify_tokens WHERE user_id = ?",
     [user_id],
-    (err, rows) => {
-      if (err) {
-        console.error("Error obteniendo liked_songs:", err);
-        return res.status(500).json({ error: "Error obteniendo canciones favoritas" });
-      }
-
-      res.json(rows);
-    }
-  );
-});
-
-// 4) Recomendaciones inteligentes basadas en moods
-app.get("/api/recommendations/:user_id", (req, res) => {
-  const { user_id } = req.params;
-
-  db.all(
-    `SELECT mood FROM liked_songs WHERE user_id = ?`,
-    [user_id],
-    (err, rows) => {
-      if (err) {
-        console.error("Error en recomendaciones:", err);
-        return res.status(500).json({ error: "Error generando recomendaciones" });
-      }
-
-      if (!rows || rows.length === 0) {
-        // Caso sin likes
-        return res.json({
-          recommendedMoods: [],
-          message: ""
+    async (err, row) => {
+      if (err) return res.status(500).json({ error: "DB error" });
+      if (!row) {
+        return res.status(400).json({
+          error: "No hay cuenta de Spotify vinculada para este usuario."
         });
       }
 
-      const moodCount = {};
-      rows.forEach(r => {
-        const mood = (r.mood || "").toLowerCase().trim();
-        if (!mood) return;
-        moodCount[mood] = (moodCount[mood] || 0) + 1;
-      });
+      let accessToken = row.access_token;
+      let refreshToken = row.refresh_token;
+      let expiresAt = row.expires_at || 0;
 
-      const entries = Object.entries(moodCount).sort((a, b) => b[1] - a[1]);
-      const recommendedMoods = entries.slice(0, 3).map(([mood]) => mood);
-      const topMood = recommendedMoods[0] || null;
-      const totalLikes = rows.length;
+      try {
+        // Refrescar token si está vencido
+        if (expiresAt && expiresAt <= Date.now() && refreshToken) {
+          const refreshResp = await axios.post(
+            "https://accounts.spotify.com/api/token",
+            new URLSearchParams({
+              grant_type: "refresh_token",
+              refresh_token: refreshToken,
+              client_id: CLIENT_ID,
+              client_secret: CLIENT_SECRET
+            }),
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+          );
 
-      const message = `Basado en tus ${totalLikes} canciones favoritas, te recomendamos estos estados de ánimo`;
+          accessToken = refreshResp.data.access_token;
+          const newExpiresIn = refreshResp.data.expires_in || 3600;
+          expiresAt = Date.now() + newExpiresIn * 1000;
 
-      res.json({
-        recommendedMoods,
-        message,
-        topMood,
-        stats: moodCount
-      });
+          db.run(
+            "UPDATE spotify_tokens SET access_token = ?, expires_at = ? WHERE user_id = ?",
+            [accessToken, expiresAt, user_id]
+          );
+        }
+
+        // Obtener ID del usuario en Spotify
+        const meResp = await axios.get("https://api.spotify.com/v1/me", {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        const spotifyUserId = meResp.data.id;
+
+        // Crear playlist PRIVADA
+        const playlistResp = await axios.post(
+          `https://api.spotify.com/v1/users/${spotifyUserId}/playlists`,
+          {
+            name,
+            description: description || "Playlist generada desde MoodPlaylist",
+            public: false // PRIVADA
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            }
+          }
+        );
+
+        const playlistId = playlistResp.data.id;
+        const playlistUrl = playlistResp.data.external_urls?.spotify;
+
+        // Agregar tracks
+        if (uris.length > 0) {
+          await axios.post(
+            `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+            {
+              uris
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json"
+              }
+            }
+          );
+        }
+
+        res.json({
+          success: true,
+          url: playlistUrl
+        });
+      } catch (error) {
+        console.error(
+          "Error exportando playlist a Spotify:",
+          error.response?.data || error
+        );
+        res.status(500).json({
+          error: "Error al crear la playlist en Spotify."
+        });
+      }
     }
   );
 });
 
-// =============================================
-// SERVIDOR
-// =============================================
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://127.0.0.1:${PORT}`);
-});
+// ======================================
+// ROUTER DE AUTENTICACIÓN SPOTIFY (OAuth)
+// ======================================
+app.use("/spotify", spotifyAuth);
+
+// ======================================
+app.listen(3000, () =>
+  console.log("Servidor escuchando en http://127.0.0.1:3000")
+);
