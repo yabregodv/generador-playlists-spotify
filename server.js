@@ -214,15 +214,17 @@ app.get("/api/recommendations/:user_id", (req, res) => {
       }
 
       if (!rows || rows.length === 0) {
-        // Caso sin likes
+        // Caso sin likes: devolvemos siempre las mismas claves
         return res.json({
           recommendedMoods: [],
-          message: ""
+          message: "",
+          topMood: null,
+          stats: {}
         });
       }
 
       const moodCount = {};
-      rows.forEach(r => {
+      rows.forEach((r) => {
         const mood = (r.mood || "").toLowerCase().trim();
         if (!mood) return;
         moodCount[mood] = (moodCount[mood] || 0) + 1;
@@ -244,6 +246,7 @@ app.get("/api/recommendations/:user_id", (req, res) => {
     }
   );
 });
+
 
 // =============================================
 // SERVIDOR
